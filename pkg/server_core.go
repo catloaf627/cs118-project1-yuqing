@@ -1,3 +1,8 @@
+/*
+Send：Receive messages from client and save them.
+Fetch：Send user's message if user requests.
+*/
+
 package whatsup
 
 import (
@@ -92,6 +97,31 @@ func (s Server) Connect(_ context.Context, r *Registration) (*AuthToken, error) 
 // (when you initially receive it, it will have the name of the recipient instead).
 // TODO: Implement `Send`. If any errors occur, return any error message you'd like.
 func (s Server) Send(ctx context.Context, msg *ChatMessage) (*Success, error) {
+	// Get username from the context
+    sender := fmt.Sprintf("%v", ctx.Value("username"))
+    if sender == "" {
+        return &Success{Ok: false}, errors.New("no sender found in context")
+    }
+
+    // Receiver
+    dest := msg.User
+    if _, ok := s.Inboxes[dest]; !ok {
+        return &Success{Ok: false}, fmt.Errorf("user %s not found", dest)
+    }
+
+    // Create a new message, user -> Sender
+    newMsg := &ChatMessage{
+        User: sender,
+        Body: msg.Body,
+    }
+
+    // put the message in Receiver's inbox
+    select {
+    case s.Inboxes[dest] <- newMsg:
+        return &Success{Ok: true}, nil
+    default:
+        return &Success{Ok: false}, errors.New("inbox full")
+    }
 }
 
 // Implementation of the Fetch method defined in our `.proto` file.
@@ -102,6 +132,27 @@ func (s Server) Send(ctx context.Context, msg *ChatMessage) (*Success, error) {
 //
 // TODO: Implement Fetch. If any errors occur, return any error message you'd like.
 func (s Server) Fetch(ctx context.Context, _ *Empty) (*ChatMessages, error) {
+	user := fmt.Sprintf("%v", ctx.Value("username"))
+    if user == "" {
+        return nil, errors.New("no user found in context")
+    }
+
+    inbox, ok := s.Inboxes[user]
+    if !ok {
+        return nil, fmt.Errorf("no inbox found for user %s", user)
+    }
+
+    var result ChatMessages
+    // Get messages(50 tops) from inbox
+    for i := 0; i < BATCH_SIZE; i++ {
+        select {
+        case msg := <-inbox:
+            result.Messages = append(result.Messages, msg)
+        default:
+            return &result, nil
+        }
+    }
+    return &result, nil
 }
 
 // Implementation of the List method defined in our `.proto` file.
