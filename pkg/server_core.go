@@ -16,6 +16,9 @@ import (
 
 const BATCH_SIZE = 50
 const MAILBOX_SIZE = 1024
+// Test inbox full & fetch batch
+// const BATCH_SIZE = 5
+// const MAILBOX_SIZE = 10
 
 // A simple hash function for Connect to use to generate new tokens.
 // Not used anywhere else.
@@ -78,6 +81,14 @@ func (s Server) Connect(_ context.Context, r *Registration) (*AuthToken, error) 
 
 	token := hash(r.SourceUser)
 
+	fmt.Printf("Connected user: %s\n", r.SourceUser)
+	fmt.Printf("Token: %s\n", token)
+	fmt.Println("Current existed Auth List:")
+	for t, user := range s.AuthToUserTable {
+		fmt.Printf("  %s => %s\n", t, user)
+	}
+	fmt.Printf("========\n")
+
 	if _, ok := s.AuthToUserTable[token]; !ok {
 		s.AuthToUserTable[token] = r.SourceUser
 		s.Inboxes[r.SourceUser] = make(chan *ChatMessage, MAILBOX_SIZE)
@@ -115,9 +126,12 @@ func (s Server) Send(ctx context.Context, msg *ChatMessage) (*Success, error) {
         Body: msg.Body,
     }
 
+	fmt.Printf("%s sent a message to %s: %s\n", sender, dest, msg.Body)
+
     // put the message in Receiver's inbox
     select {
     case s.Inboxes[dest] <- newMsg:
+		fmt.Printf("Inbox[%s] size=%d\n", dest, len(s.Inboxes[dest]))
         return &Success{Ok: true}, nil
     default:
         return &Success{Ok: false}, errors.New("inbox full")
